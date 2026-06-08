@@ -45,7 +45,16 @@ enable_gost() {
 
 log "Installing nginx, OpenSSH and GOST support"
 apt-get update
-apt-get install -y nginx openssh-server openssl-gost-engine curl apache2-htpasswd
+apt-get install -y \
+    nginx \
+    openssh-server \
+    openssl \
+    openssl-gost-engine \
+    curl \
+    apache2-htpasswd
+
+command -v openssl >/dev/null 2>&1 ||
+    die "openssl was not installed"
 
 log "Enabling GOST algorithms in OpenSSL"
 enable_gost
