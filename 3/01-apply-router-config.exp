@@ -5,7 +5,9 @@ match_max 200000
 
 set script_dir [file dirname [file normalize [info script]]]
 set env_file "$script_dir/.env"
-set prompt_re {(?m)[^\r\n]*[>#][[:space:]]*$}
+# EcoRouter may print ANSI cursor-control sequences immediately before or
+# after the prompt, so do not anchor the match to the end of the line.
+set prompt_re {(?i)[a-z0-9_.-]+[>#][ \t]*}
 
 proc fail {message} {
     puts stderr "ERROR: $message"
@@ -60,29 +62,47 @@ proc env_value {array_name key {default ""}} {
 proc wait_for_login {ssh_password} {
     global prompt_re timeout spawn_id
 
+    set output_hidden 0
+
     expect {
         -re {\x1b\[6n} {
-            send -- "\033\[24;80R"
+            send -- "\033\[24;86R"
             exp_continue
         }
         -re {(?i)are you sure you want to continue connecting.*} {
             send -- "yes\r"
             exp_continue
         }
-        -re {(?i)password:[[:space:]]*$} {
+        -re {(?i)password[[:space:]]*:[[:space:]]*} {
+            # Some EcoRouter versions echo terminal input during login.
+            # Keep the password out of the script output.
+            log_user 0
+            set output_hidden 1
             send -- "$ssh_password\r"
             exp_continue
         }
         -re {(?i)permission denied} {
+            if {$output_hidden} {
+                log_user 1
+            }
             fail "SSH authentication failed"
         }
         -re $prompt_re {
+            if {$output_hidden} {
+                log_user 1
+            }
             return $expect_out(0,string)
         }
         timeout {
+            if {$output_hidden} {
+                log_user 1
+            }
             fail "SSH login timeout after $timeout seconds"
         }
         eof {
+            if {$output_hidden} {
+                log_user 1
+            }
             fail "SSH connection closed during login"
         }
     }
@@ -103,10 +123,10 @@ proc run_command {command enable_password} {
 
     expect {
         -re {\x1b\[6n} {
-            send -- "\033\[24;80R"
+            send -- "\033\[24;86R"
             exp_continue
         }
-        -re {(?i)password:[[:space:]]*$} {
+        -re {(?i)password[[:space:]]*:[[:space:]]*} {
             if {$enable_password eq ""} {
                 fail "command '$display_command' requested a password, but ROUTER_ENABLE_PASSWORD is empty"
             }
