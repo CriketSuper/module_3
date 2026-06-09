@@ -131,14 +131,12 @@ logrotate -d "$LOGROTATE_CONFIG" >/dev/null
 
 log "Starting services"
 systemctl enable --now rsyslog
-if systemctl list-unit-files --type=service |
-    grep -q '^crond\.service'; then
-    systemctl enable --now crond
-elif systemctl list-unit-files --type=service |
-    grep -q '^cron\.service'; then
-    systemctl enable --now cron
+if systemctl enable --now crond >/dev/null 2>&1; then
+    log "Cron service crond is running"
+elif systemctl enable --now cron >/dev/null 2>&1; then
+    log "Cron service cron is running"
 else
-    die "cron service was not found"
+    die "failed to start crond or cron"
 fi
 systemctl restart rsyslog
 
