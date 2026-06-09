@@ -16,7 +16,8 @@ fi
 WEB_DOMAIN="${WEB_DOMAIN:-web.au-team.irpo}"
 DOCKER_DOMAIN="${DOCKER_DOMAIN:-docker.au-team.irpo}"
 CERT_DAYS="${CERT_DAYS:-30}"
-CA_DAYS="${CA_DAYS:-365}"
+CA_DAYS="${CA_DAYS:-30}"
+RSA_KEY_BITS="${RSA_KEY_BITS:-4096}"
 CERT_COUNTRY="${CERT_COUNTRY:-RU}"
 CERT_STATE="${CERT_STATE:-HMAO}"
 CERT_CITY="${CERT_CITY:-RADUZHNY}"
@@ -37,14 +38,6 @@ log() {
 die() {
     printf 'ERROR: %s\n' "$*" >&2
     exit 1
-}
-
-enable_gost() {
-    if control openssl-gost enabled >/dev/null 2>&1; then
-        return 0
-    fi
-    control openssl-gost all >/dev/null 2>&1 ||
-        die "could not enable OpenSSL GOST support"
 }
 
 validate_domain() {
@@ -87,6 +80,8 @@ validate_domain DOCKER_DOMAIN "$DOCKER_DOMAIN"
     die "WEB_DOMAIN and DOCKER_DOMAIN must be different"
 [[ "$CERT_DAYS" =~ ^[1-9][0-9]*$ ]] || die "CERT_DAYS must be positive"
 [[ "$CA_DAYS" =~ ^[1-9][0-9]*$ ]] || die "CA_DAYS must be positive"
+[[ "$RSA_KEY_BITS" =~ ^(2048|3072|4096)$ ]] ||
+    die "RSA_KEY_BITS must be 2048, 3072 or 4096"
 for port_name in ISP_SSH_PORT HQ_CLI_SSH_PORT; do
     port_value="${!port_name}"
     [[ "$port_value" =~ ^[0-9]+$ ]] &&
@@ -99,12 +94,9 @@ for subject_name in \
     validate_subject_value "$subject_name" "${!subject_name}"
 done
 
-log "Installing OpenSSL GOST support and SSH tools"
+log "Installing OpenSSL and SSH tools"
 apt-get update
-apt-get install -y openssl openssl-gost-engine openssh-clients sshpass
-enable_gost
-openssl ciphers | tr ':' '\n' | grep -q GOST ||
-    die "GOST cipher suites are unavailable"
+apt-get install -y openssl openssh-clients sshpass
 
 install -d -m 0700 "$PKI_DIR"
 
@@ -151,33 +143,27 @@ subjectAltName = DNS:$WEB_DOMAIN,DNS:$DOCKER_DOMAIN
 subjectKeyIdentifier = hash
 EOF
 
-log "Generating the GOST R 34.10-2012 CA"
-openssl genpkey \
-    -algorithm gost2012_256 \
-    -pkeyopt paramset:TCA \
-    -out "$PKI_DIR/ca.key"
+log "Generating the RSA-$RSA_KEY_BITS CA"
+openssl genrsa -out "$PKI_DIR/ca.key" "$RSA_KEY_BITS"
 openssl req \
     -new -x509 \
-    -md_gost12_256 \
+    -sha256 \
     -days "$CA_DAYS" \
     -key "$PKI_DIR/ca.key" \
     -out "$PKI_DIR/ca.crt" \
     -config "$PKI_DIR/ca.cnf"
 
 log "Issuing the web certificate for $CERT_DAYS days"
-openssl genpkey \
-    -algorithm gost2012_256 \
-    -pkeyopt paramset:TCA \
-    -out "$PKI_DIR/web.key"
+openssl genrsa -out "$PKI_DIR/web.key" "$RSA_KEY_BITS"
 openssl req \
     -new \
-    -md_gost12_256 \
+    -sha256 \
     -key "$PKI_DIR/web.key" \
     -out "$PKI_DIR/web.csr" \
     -config "$PKI_DIR/server.cnf"
 openssl x509 \
     -req \
-    -md_gost12_256 \
+    -sha256 \
     -days "$CERT_DAYS" \
     -in "$PKI_DIR/web.csr" \
     -CA "$PKI_DIR/ca.crt" \
@@ -192,8 +178,11 @@ chmod 0644 "$PKI_DIR/ca.crt" "$PKI_DIR/web.crt"
 
 openssl verify -CAfile "$PKI_DIR/ca.crt" "$PKI_DIR/web.crt"
 openssl x509 -in "$PKI_DIR/web.crt" -noout -text |
-    grep -q 'GOST R 34.10-2012' ||
-    die "the server certificate does not use GOST R 34.10-2012"
+    grep -q 'Public Key Algorithm: rsaEncryption' ||
+    die "the server certificate does not use RSA"
+openssl x509 -in "$PKI_DIR/web.crt" -noout -text |
+    grep -qi 'Signature Algorithm: sha256WithRSAEncryption' ||
+    die "the server certificate does not use SHA-256 with RSA"
 san_output="$(openssl x509 -in "$PKI_DIR/web.crt" -noout -ext subjectAltName)"
 grep -Fq "DNS:$WEB_DOMAIN" <<< "$san_output" ||
     die "$WEB_DOMAIN is absent from the certificate"

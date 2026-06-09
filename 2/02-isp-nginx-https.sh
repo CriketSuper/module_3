@@ -20,7 +20,6 @@ SSH_USER="${SSH_USER:-sshuser}"
 AUTH_USER="${AUTH_USER:-WEB}"
 AUTH_PASSWORD="${AUTH_PASSWORD:-P@ssw0rd}"
 AUTH_REALM="${AUTH_REALM:-Restricted Access}"
-GOST_CIPHERS="${GOST_CIPHERS:-GOST2012-GOST8912-GOST8912:GOST2001-GOST89-GOST89}"
 
 SSL_DIR=/etc/nginx/ssl
 NGINX_AVAILABLE_DIR=/etc/nginx/sites-available.d
@@ -47,24 +46,13 @@ backup_file() {
     cp -a -- "$file" "$BACKUP_DIR/$(basename "$file").$(date +%Y%m%d%H%M%S)"
 }
 
-enable_gost() {
-    if control openssl-gost enabled >/dev/null 2>&1; then
-        return 0
-    fi
-    control openssl-gost all >/dev/null 2>&1 ||
-        die "could not enable OpenSSL GOST support"
-}
-
 [[ $EUID -eq 0 ]] || die "run this script as root"
 [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] ||
     die "SSH_USER contains unsupported characters"
-[[ -n "$GOST_CIPHERS" && "$GOST_CIPHERS" != *[[:space:]]* ]] ||
-    die "GOST_CIPHERS must not be empty or contain spaces"
 
-log "Installing nginx and GOST support"
+log "Installing nginx and TLS tools"
 apt-get update
-apt-get install -y nginx openssl-gost-engine curl apache2-htpasswd
-enable_gost
+apt-get install -y nginx openssl curl apache2-htpasswd
 
 SOURCE_DIR="/home/$SSH_USER"
 for certificate_file in web.crt web.key au-team-ca.crt; do
@@ -80,8 +68,8 @@ install -m 0644 "$SOURCE_DIR/au-team-ca.crt" "$SSL_DIR/au-team-ca.crt"
 
 openssl verify -CAfile "$SSL_DIR/au-team-ca.crt" "$SSL_DIR/web.crt"
 openssl x509 -in "$SSL_DIR/web.crt" -noout -text |
-    grep -q 'GOST R 34.10-2012' ||
-    die "the installed certificate is not a GOST certificate"
+    grep -q 'Public Key Algorithm: rsaEncryption' ||
+    die "the installed certificate does not use RSA"
 
 log "Ensuring the Basic Auth account exists"
 htpasswd -bc "$HTPASSWD_FILE" "$AUTH_USER" "$AUTH_PASSWORD"
@@ -110,9 +98,7 @@ server {
 
     ssl_certificate $SSL_DIR/web.crt;
     ssl_certificate_key $SSL_DIR/web.key;
-    ssl_protocols TLSv1.2;
-    ssl_ciphers $GOST_CIPHERS;
-    ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1.2 TLSv1.3;
 
     auth_basic "$AUTH_REALM";
     auth_basic_user_file $HTPASSWD_FILE;
@@ -132,9 +118,7 @@ server {
 
     ssl_certificate $SSL_DIR/web.crt;
     ssl_certificate_key $SSL_DIR/web.key;
-    ssl_protocols TLSv1.2;
-    ssl_ciphers $GOST_CIPHERS;
-    ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1.2 TLSv1.3;
 
     location / {
         proxy_pass http://$DOCKER_UPSTREAM;

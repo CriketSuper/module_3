@@ -1,26 +1,30 @@
-# Модуль 3, задание 2: ГОСТ CA и HTTPS
+# Модуль 3, задание 2: CA и HTTPS
 
-Используется ГОСТ Р 34.10-2012 с хешем ГОСТ Р 34.11-2012. Серверный
-сертификат выдаётся на `30` дней и содержит оба DNS-имени:
+В этой реализации используется совместимая схема RSA-4096 и SHA-256.
+Сертификаты действуют `30` дней и содержат оба DNS-имени:
 
 - `web.au-team.irpo`;
 - `docker.au-team.irpo`.
 
+Это намеренное отступление от требования отечественных алгоритмов для
+совместимости с обычным Yandex Browser и Chromium.
+
 ## Параметры
 
-Перед запуском проверьте `.env`, особенно:
+Перед запуском проверьте `.env`:
 
 ```bash
 CERT_DAYS=30
 CA_DAYS=30
-GOST_CIPHERS=GOST2012-GOST8912-GOST8912:GOST2001-GOST89-GOST89
-ISP_IP=172.16.1.1
+RSA_KEY_BITS=4096
+
+ISP_IP=172.16.4.1
 HQ_CLI_IP=192.168.2.10
-WEB_UPSTREAM=172.16.1.2:8080
-DOCKER_UPSTREAM=172.16.2.2:8080
+WEB_UPSTREAM=172.16.4.4:8080
+DOCKER_UPSTREAM=172.16.5.5:8080
 ```
 
-## 1. Подготовка ISP
+## Порядок запуска
 
 На `ISP`:
 
@@ -28,29 +32,11 @@ DOCKER_UPSTREAM=172.16.2.2:8080
 bash 00-isp-prepare.sh
 ```
 
-Скрипт устанавливает nginx, SSH и `openssl-gost-engine`, создаёт
-`sshuser` и включает поддержку ГОСТ.
-
-## 2. Выпуск и передача сертификатов
-
 На `HQ-SRV`:
 
 ```bash
 bash 01-hq-srv-issue-certificates.sh
 ```
-
-Центр сертификации сохраняется в:
-
-```text
-/root/au-team-ca
-```
-
-Скрипт автоматически передаёт:
-
-- сертификат и ключ веб-сервера на `ISP`;
-- корневой сертификат на `HQ-CLI`.
-
-## 3. HTTPS на ISP
 
 На `ISP`:
 
@@ -58,45 +44,38 @@ bash 01-hq-srv-issue-certificates.sh
 bash 02-isp-nginx-https.sh
 ```
 
-HTTP-запросы перенаправляются на HTTPS. Basic Auth остаётся включён только
-для `web.au-team.irpo`.
-
-Закрытый ключ устанавливается с правами `0600`:
-
-```text
-/etc/nginx/ssl/web.key
-```
-
-## 4. Доверие на HQ-CLI
-
 На `HQ-CLI`:
 
 ```bash
 bash 03-hq-cli-trust-ca.sh
 ```
 
-Сценарий включает ГОСТ в OpenSSL и помещает сертификат в системное
-хранилище:
+Скрипт `HQ-SRV` автоматически передаёт сертификат и ключ на `ISP`, а
+корневой сертификат на `HQ-CLI`.
+
+## Результат
+
+Центр сертификации на `HQ-SRV`:
+
+```text
+/root/au-team-ca
+```
+
+Сертификат и закрытый ключ nginx:
+
+```text
+/etc/nginx/ssl/web.crt
+/etc/nginx/ssl/web.key
+```
+
+Корневой сертификат на `HQ-CLI`:
 
 ```text
 /etc/pki/ca-trust/source/anchors/au-team-ca.crt
 ```
 
-Обычный `chromium` и `chromium-gost` являются альтернативными сборками и не
-используются одновременно. Реальный пакет `chromium-gost` находится в
-официальном компоненте ALT `gostcrypto`. Сценарий добавляет репозиторий:
-
-```text
-rpm [p10] http://ftp.altlinux.org p10/branch/x86_64 gostcrypto
-```
-
-Затем он определяет версию именно RPM-пакета `chromium-gost`, удаляет обычный
-Chromium и устанавливает ГОСТ-сборку с явным указанием версии. Это не позволяет
-APT снова выбрать виртуальный поставщик `chromium`. Пользовательский профиль
-при этом не удаляется.
-
-После установки закройте все окна Chromium и запустите браузер снова. В меню
-приложений он может по-прежнему называться просто Chromium.
+Nginx перенаправляет HTTP на HTTPS. Basic Auth применяется только к
+`web.au-team.irpo`.
 
 ## Проверка
 
@@ -108,22 +87,21 @@ curl -u 'WEB:P@ssw0rd' https://web.au-team.irpo/ | head
 curl https://docker.au-team.irpo/ | head
 ```
 
-Параметр `-k` использовать нельзя: проверка должна проходить через
-установленный доверенный CA.
+Параметр `-k` использовать нельзя.
 
-В браузере откройте:
+В обычном Yandex Browser или Chromium:
 
 ```text
 https://web.au-team.irpo/
 https://docker.au-team.irpo/
 ```
 
-Предупреждений о сертификате быть не должно. Для `web.au-team.irpo`
-используются логин `WEB` и пароль `P@ssw0rd`.
+Если браузер был открыт во время установки CA, полностью перезапустите его.
 
-Проверка алгоритма и срока на `HQ-SRV`:
+Проверка сертификата на `HQ-SRV`:
 
 ```bash
-openssl x509 -in /root/au-team-ca/web.crt -noout -text
-openssl x509 -in /root/au-team-ca/web.crt -noout -dates
+openssl x509 -in /root/au-team-ca/web.crt -noout -subject -issuer -dates
+openssl x509 -in /root/au-team-ca/web.crt -noout -text |
+    grep -E 'Public Key Algorithm|Signature Algorithm|DNS:'
 ```

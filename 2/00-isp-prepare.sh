@@ -26,14 +26,6 @@ die() {
     exit 1
 }
 
-enable_gost() {
-    if control openssl-gost enabled >/dev/null 2>&1; then
-        return 0
-    fi
-    control openssl-gost all >/dev/null 2>&1 ||
-        die "could not enable OpenSSL GOST support"
-}
-
 [[ $EUID -eq 0 ]] || die "run this script as root"
 [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] ||
     die "SSH_USER contains unsupported characters"
@@ -43,23 +35,17 @@ enable_gost() {
     (( ISP_SSH_PORT >= 1 && ISP_SSH_PORT <= 65535 )) ||
     die "ISP_SSH_PORT must be from 1 to 65535"
 
-log "Installing nginx, OpenSSH and GOST support"
+log "Installing nginx, OpenSSH and TLS tools"
 apt-get update
 apt-get install -y \
     nginx \
     openssh-server \
     openssl \
-    openssl-gost-engine \
     curl \
     apache2-htpasswd
 
 command -v openssl >/dev/null 2>&1 ||
     die "openssl was not installed"
-
-log "Enabling GOST algorithms in OpenSSL"
-enable_gost
-openssl ciphers | tr ':' '\n' | grep -q GOST ||
-    die "GOST cipher suites are unavailable"
 
 if ! id "$SSH_USER" >/dev/null 2>&1; then
     log "Creating $SSH_USER"
@@ -103,6 +89,4 @@ systemctl restart sshd
 systemctl is-active --quiet sshd || die "sshd is not running"
 
 log "ISP preparation completed"
-printf 'GOST cipher suites:\n'
-openssl ciphers | tr ':' '\n' | grep GOST
 printf 'SSH port: %s\n' "$ISP_SSH_PORT"
