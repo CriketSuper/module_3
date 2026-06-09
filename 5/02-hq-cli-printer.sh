@@ -13,6 +13,7 @@ ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
 source "$ENV_FILE"
 
 CUPS_SERVER_HOST="${CUPS_SERVER_HOST:-hq-srv.au-team.irpo}"
+CUPS_SERVER_IP="${CUPS_SERVER_IP:-192.168.1.10}"
 CUPS_SERVER_PORT="${CUPS_SERVER_PORT:-631}"
 SERVER_QUEUE="${SERVER_QUEUE:-Cups-PDF}"
 CLIENT_QUEUE="${CLIENT_QUEUE:-HQ-PDF}"
@@ -41,8 +42,39 @@ command -v lpadmin >/dev/null 2>&1 ||
 command -v lp >/dev/null 2>&1 ||
     die "lp was not installed"
 
-getent hosts "$CUPS_SERVER_HOST" >/dev/null ||
-    die "$CUPS_SERVER_HOST cannot be resolved"
+if ! getent hosts "$CUPS_SERVER_HOST" >/dev/null; then
+    log "$CUPS_SERVER_HOST cannot be resolved; updating /etc/hosts"
+
+    [[ "$CUPS_SERVER_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] ||
+        die "CUPS_SERVER_IP is not an IPv4 address"
+
+    hosts_temp="$(mktemp)"
+    trap 'rm -f "${hosts_temp:-}"' EXIT
+    awk -v hostname="$CUPS_SERVER_HOST" '
+        /^[[:space:]]*#/ || NF == 0 {
+            print
+            next
+        }
+        {
+            output = $1
+            for (i = 2; i <= NF; i++) {
+                if ($i != hostname) {
+                    output = output " " $i
+                }
+            }
+            if (output != $1) {
+                print output
+            }
+        }
+    ' /etc/hosts > "$hosts_temp"
+    printf '%s\t%s\n' "$CUPS_SERVER_IP" "$CUPS_SERVER_HOST" >> "$hosts_temp"
+    install -m 0644 "$hosts_temp" /etc/hosts
+    rm -f "$hosts_temp"
+    trap - EXIT
+
+    getent hosts "$CUPS_SERVER_HOST" >/dev/null ||
+        die "$CUPS_SERVER_HOST still cannot be resolved after updating /etc/hosts"
+fi
 
 printer_uri="ipp://${CUPS_SERVER_HOST}:${CUPS_SERVER_PORT}/printers/${SERVER_QUEUE}"
 

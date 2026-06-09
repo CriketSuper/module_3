@@ -9,6 +9,16 @@ chmod +x 01-hq-srv-cups.sh
 
 ## 2. HQ-CLI
 
+Проверьте адрес HQ-SRV в `.env`:
+
+```bash
+CUPS_SERVER_HOST=hq-srv.au-team.irpo
+CUPS_SERVER_IP=192.168.1.10
+```
+
+Если DNS не разрешает имя сервера, скрипт автоматически добавит его в
+`/etc/hosts`.
+
 ```bash
 chmod +x 02-hq-cli-printer.sh
 ./02-hq-cli-printer.sh
