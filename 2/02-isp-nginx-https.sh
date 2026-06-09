@@ -100,6 +100,8 @@ server {
     ssl_certificate_key $SSL_DIR/web.key;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    add_header Content-Security-Policy "upgrade-insecure-requests" always;
+
     auth_basic "$AUTH_REALM";
     auth_basic_user_file $HTPASSWD_FILE;
 
@@ -108,7 +110,9 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
     }
 }
 
@@ -120,12 +124,16 @@ server {
     ssl_certificate_key $SSL_DIR/web.key;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    add_header Content-Security-Policy "upgrade-insecure-requests" always;
+
     location / {
         proxy_pass http://$DOCKER_UPSTREAM;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
     }
 }
 EOF

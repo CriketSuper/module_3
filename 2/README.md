@@ -75,7 +75,10 @@ bash 03-hq-cli-trust-ca.sh
 ```
 
 Nginx перенаправляет HTTP на HTTPS. Basic Auth применяется только к
-`web.au-team.irpo`.
+`web.au-team.irpo`. Для обоих приложений добавляется
+`Content-Security-Policy: upgrade-insecure-requests` и передаются заголовки
+`X-Forwarded-Proto`, `X-Forwarded-Host` и `X-Forwarded-Port`, чтобы ресурсы
+CSS/JS не блокировались как mixed content.
 
 ## Проверка
 
