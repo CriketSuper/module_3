@@ -41,7 +41,7 @@ bash 00-generate-router-configs.sh
 
 ```bash
 apt-get update
-apt-get install -y expect openssh-clients
+apt-get install -y expect openssh-clients sshpass
 ```
 
 Укажите в `.env` адреса, доступные для SSH, и учётные данные:
@@ -50,14 +50,29 @@ apt-get install -y expect openssh-clients
 HQ_SSH_HOST=172.16.4.4
 BR_SSH_HOST=172.16.5.5
 ROUTER_SSH_PORT=22
-ROUTER_SSH_USER=admin
-ROUTER_SSH_PASSWORD=admin
+ROUTER_SSH_USER=net_admin
+ROUTER_SSH_AUTH=password
+ROUTER_SSH_PASSWORD=P@ssw0rd
+ROUTER_SSH_KEY=
 ROUTER_ENABLE_PASSWORD=
 ```
 
 `HQ_SSH_HOST` и `BR_SSH_HOST` — адреса подключения к CLI. Они могут
 отличаться от `HQ_WAN_IP` и `BR_WAN_IP`. Если команда `enable` запрашивает
 отдельный пароль, укажите его в `ROUTER_ENABLE_PASSWORD`.
+
+При `ROUTER_SSH_AUTH=password` пароль автоматически передаёт `sshpass`.
+Вручную вводить его во время запуска не нужно.
+
+Для уже установленного на маршрутизаторах SSH-ключа можно переключиться
+на ключевую авторизацию:
+
+```bash
+ROUTER_SSH_AUTH=key
+ROUTER_SSH_KEY=/root/.ssh/id_ed25519
+```
+
+В этом режиме `ROUTER_SSH_PASSWORD` не используется.
 
 Создайте конфигурации и примените их:
 
@@ -157,12 +172,11 @@ ping 172.16.0.2 source 172.16.0.1
 
 Сценарий не удаляет `tunnel.0` и не создаёт VTI. Он:
 
-- сохраняет GRE-адреса `172.16.0.1/30` и `172.16.0.2/30`;
-- устанавливает MTU `1400`;
+- не изменяет преднастроенные GRE-адреса, MTU и endpoints;
 - включает IKEv2;
 - шифрует только GRE между WAN-адресами;
 - добавляет служебное правило UDP/4500 для IKEv2 NAT-T;
-- оставляет GRE-сеть в OSPF area 0.
+- не изменяет преднастроенную конфигурацию OSPF.
 
 ## Проверка
 

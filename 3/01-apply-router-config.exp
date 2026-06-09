@@ -59,10 +59,8 @@ proc env_value {array_name key {default ""}} {
     return $default
 }
 
-proc wait_for_login {ssh_password} {
+proc wait_for_login {} {
     global prompt_re timeout spawn_id
-
-    set output_hidden 0
 
     expect {
         -re {\x1b\[6n} {
@@ -73,36 +71,19 @@ proc wait_for_login {ssh_password} {
             send -- "yes\r"
             exp_continue
         }
-        -re {(?i)password[[:space:]]*:[[:space:]]*} {
-            # Some EcoRouter versions echo terminal input during login.
-            # Keep the password out of the script output.
-            log_user 0
-            set output_hidden 1
-            send -- "$ssh_password\r"
-            exp_continue
-        }
         -re {(?i)permission denied} {
-            if {$output_hidden} {
-                log_user 1
-            }
             fail "SSH authentication failed"
         }
+        -re {(?i)password[[:space:]]*:[[:space:]]*} {
+            fail "SSH requested a password; check sshpass, ROUTER_SSH_AUTH and ROUTER_SSH_PASSWORD"
+        }
         -re $prompt_re {
-            if {$output_hidden} {
-                log_user 1
-            }
             return $expect_out(0,string)
         }
         timeout {
-            if {$output_hidden} {
-                log_user 1
-            }
             fail "SSH login timeout after $timeout seconds"
         }
         eof {
-            if {$output_hidden} {
-                log_user 1
-            }
             fail "SSH connection closed during login"
         }
     }
@@ -165,7 +146,10 @@ proc run_command {command enable_password} {
     }
 }
 
-proc apply_config {label host port user ssh_password enable_password config_file} {
+proc apply_config {
+    label host port user auth_mode ssh_password ssh_key
+    enable_password config_file
+} {
     global prompt_re spawn_id
 
     if {![file exists $config_file]} {
@@ -173,13 +157,27 @@ proc apply_config {label host port user ssh_password enable_password config_file
     }
 
     puts "\n=== $label: $user@$host:$port ==="
-    spawn ssh -tt \
-        -p $port \
-        -o ConnectTimeout=10 \
-        -o StrictHostKeyChecking=accept-new \
-        -- "$user@$host"
 
-    set initial_prompt [wait_for_login $ssh_password]
+    if {$auth_mode eq "password"} {
+        set ::env(SSHPASS) $ssh_password
+        spawn sshpass -e ssh -tt \
+            -p $port \
+            -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=accept-new \
+            -o PreferredAuthentications=keyboard-interactive,password \
+            -o PubkeyAuthentication=no \
+            -- "$user@$host"
+    } else {
+        spawn ssh -tt \
+            -i $ssh_key \
+            -p $port \
+            -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=accept-new \
+            -o PreferredAuthentications=publickey \
+            -- "$user@$host"
+    }
+
+    set initial_prompt [wait_for_login]
     set privileged [string match "*#*" $initial_prompt]
 
     set handle [open $config_file r]
@@ -237,13 +235,32 @@ if {$target ni {hq br all}} {
 
 set ssh_port [env_value config ROUTER_SSH_PORT 22]
 set ssh_user [env_value config ROUTER_SSH_USER admin]
+set auth_mode [string tolower [env_value config ROUTER_SSH_AUTH password]]
 set ssh_password [env_value config ROUTER_SSH_PASSWORD ""]
+set ssh_key [env_value config ROUTER_SSH_KEY ""]
 set enable_password [env_value config ROUTER_ENABLE_PASSWORD ""]
 set hq_host [env_value config HQ_SSH_HOST ""]
 set br_host [env_value config BR_SSH_HOST ""]
 
-if {$ssh_password eq ""} {
+if {[auto_execok ssh] eq ""} {
+    fail "ssh not found; install openssh-clients"
+}
+if {$auth_mode ni {password key}} {
+    fail "ROUTER_SSH_AUTH must be password or key"
+}
+if {$auth_mode eq "password" && $ssh_password eq ""} {
     fail "ROUTER_SSH_PASSWORD is empty"
+}
+if {$auth_mode eq "password" && [auto_execok sshpass] eq ""} {
+    fail "sshpass not found; install the sshpass package"
+}
+if {$auth_mode eq "key"} {
+    if {$ssh_key eq ""} {
+        fail "ROUTER_SSH_KEY is empty"
+    }
+    if {![file exists $ssh_key]} {
+        fail "SSH private key $ssh_key not found"
+    }
 }
 if {![string is integer -strict $ssh_port] ||
     $ssh_port < 1 || $ssh_port > 65535} {
@@ -255,8 +272,8 @@ if {$target eq "hq" || $target eq "all"} {
         fail "HQ_SSH_HOST is empty"
     }
     apply_config \
-        "HQ-RTR" $hq_host $ssh_port $ssh_user \
-        $ssh_password $enable_password "$script_dir/HQ-RTR.conf"
+        "HQ-RTR" $hq_host $ssh_port $ssh_user $auth_mode \
+        $ssh_password $ssh_key $enable_password "$script_dir/HQ-RTR.conf"
 }
 
 if {$target eq "br" || $target eq "all"} {
@@ -264,6 +281,6 @@ if {$target eq "br" || $target eq "all"} {
         fail "BR_SSH_HOST is empty"
     }
     apply_config \
-        "BR-RTR" $br_host $ssh_port $ssh_user \
-        $ssh_password $enable_password "$script_dir/BR-RTR.conf"
+        "BR-RTR" $br_host $ssh_port $ssh_user $auth_mode \
+        $ssh_password $ssh_key $enable_password "$script_dir/BR-RTR.conf"
 }
