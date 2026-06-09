@@ -37,12 +37,20 @@ bash 00-generate-router-configs.sh
 Сценарий `01-apply-router-config.exp` можно запускать с любой ALT Linux
 машины, которая имеет IP-доступ к обоим маршрутизаторам.
 
-Установите зависимости:
+### Необходимые пакеты
+
+На машине, с которой запускается `.exp`-скрипт, установите:
 
 ```bash
 apt-get update
 apt-get install -y expect openssh-clients sshpass
 ```
+
+Назначение пакетов:
+
+- `expect` — управление интерактивным CLI EcoRouter;
+- `openssh-clients` — SSH-клиент;
+- `sshpass` — автоматическая передача SSH-пароля.
 
 Укажите в `.env` адреса, доступные для SSH, и учётные данные:
 
@@ -54,6 +62,7 @@ ROUTER_SSH_USER=net_admin
 ROUTER_SSH_AUTH=password
 ROUTER_SSH_PASSWORD=P@ssw0rd
 ROUTER_SSH_KEY=
+ROUTER_COMMAND_DELAY_MS=100
 ROUTER_ENABLE_PASSWORD=
 ```
 
@@ -73,6 +82,9 @@ ROUTER_SSH_KEY=/root/.ssh/id_ed25519
 ```
 
 В этом режиме `ROUTER_SSH_PASSWORD` не используется.
+
+`ROUTER_COMMAND_DELAY_MS` задаёт паузу перед каждой командой в миллисекундах.
+Обычно достаточно `100`; на медленном стенде можно указать `300`–`500`.
 
 Создайте конфигурации и примените их:
 

@@ -7,7 +7,7 @@ set script_dir [file dirname [file normalize [info script]]]
 set env_file "$script_dir/.env"
 # EcoRouter may print ANSI cursor-control sequences immediately before or
 # after the prompt, so do not anchor the match to the end of the line.
-set prompt_re {(?i)[a-z0-9_.-]+[>#][ \t]*}
+set prompt_re {(?i)[a-z0-9_.-]+(\([^)\r\n]+\))*[>#][ \t]*}
 
 proc fail {message} {
     puts stderr "ERROR: $message"
@@ -90,7 +90,7 @@ proc wait_for_login {} {
 }
 
 proc run_command {command enable_password} {
-    global prompt_re timeout spawn_id
+    global prompt_re timeout spawn_id command_delay_ms
 
     set sensitive [regexp -nocase {auth[[:space:]]+pre-shared-key} $command]
     set display_command $command
@@ -99,6 +99,9 @@ proc run_command {command enable_password} {
         log_user 0
     }
 
+    if {$command_delay_ms > 0} {
+        after $command_delay_ms
+    }
     send -- "$command\r"
     set response ""
 
@@ -238,6 +241,7 @@ set ssh_user [env_value config ROUTER_SSH_USER admin]
 set auth_mode [string tolower [env_value config ROUTER_SSH_AUTH password]]
 set ssh_password [env_value config ROUTER_SSH_PASSWORD ""]
 set ssh_key [env_value config ROUTER_SSH_KEY ""]
+set command_delay_ms [env_value config ROUTER_COMMAND_DELAY_MS 100]
 set enable_password [env_value config ROUTER_ENABLE_PASSWORD ""]
 set hq_host [env_value config HQ_SSH_HOST ""]
 set br_host [env_value config BR_SSH_HOST ""]
@@ -265,6 +269,10 @@ if {$auth_mode eq "key"} {
 if {![string is integer -strict $ssh_port] ||
     $ssh_port < 1 || $ssh_port > 65535} {
     fail "ROUTER_SSH_PORT must be from 1 to 65535"
+}
+if {![string is integer -strict $command_delay_ms] ||
+    $command_delay_ms < 0 || $command_delay_ms > 5000} {
+    fail "ROUTER_COMMAND_DELAY_MS must be from 0 to 5000"
 }
 
 if {$target eq "hq" || $target eq "all"} {
