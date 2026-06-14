@@ -10,6 +10,13 @@ chmod +x ./*.sh ./*.exp
 ./01-apply-router-config.exp all
 ```
 
+Проверка доступа к репозиторию с HQ-SRV, HQ-CLI и BR-SRV:
+
+```bash
+curl -I http://ftp.altlinux.org/
+apt-get update
+```
+
 ## Проверка с ISP
 
 ```bash

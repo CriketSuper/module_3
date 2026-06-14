@@ -26,6 +26,7 @@ FIREWALL_MAP="${FIREWALL_MAP:-INTERNET_IN}"
 OLD_IPSEC_FILTER="${OLD_IPSEC_FILTER:-VPN-FILTER}"
 CRYPTO_MAP="${CRYPTO_MAP:-VPN-MAP}"
 ALLOWED_TCP_PORTS="${ALLOWED_TCP_PORTS:?ALLOWED_TCP_PORTS is required in $ENV_FILE}"
+OUTBOUND_REPLY_TCP_PORTS="${OUTBOUND_REPLY_TCP_PORTS:?OUTBOUND_REPLY_TCP_PORTS is required in $ENV_FILE}"
 ALLOW_ICMP="${ALLOW_ICMP:-yes}"
 
 die() {
@@ -75,7 +76,7 @@ for variable_name in \
     validate_name "$variable_name" "${!variable_name}"
 done
 
-for port in $ALLOWED_TCP_PORTS; do
+for port in $ALLOWED_TCP_PORTS $OUTBOUND_REPLY_TCP_PORTS; do
     [[ "$port" =~ ^[0-9]+$ ]] &&
         (( port >= 1 && port <= 65535 )) ||
         die "invalid TCP port: $port"
@@ -133,6 +134,13 @@ exit
 no filter-map ipv4 $FIREWALL_MAP 20
 filter-map ipv4 $FIREWALL_MAP 20
  match tcp any any ack
+EOF
+
+    for port in $OUTBOUND_REPLY_TCP_PORTS; do
+        write_match_lines tcp source "$port" "${internal_networks[@]}" >> "$output_file"
+    done
+
+    cat >> "$output_file" <<EOF
  set accept
 exit
 no filter-map ipv4 $FIREWALL_MAP 30
